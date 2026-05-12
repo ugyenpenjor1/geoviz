@@ -24,24 +24,41 @@
 #'
 #' }
 #' @export
-mapbox_dem <- function(lat, long, square_km, width_buffer = 1, max_tiles = 10, api_key){
+# mapbox_dem <- function(lat, long, square_km, width_buffer = 1, max_tiles = 10, api_key){
+#
+#   mapbox_terrain <-
+#     slippy_raster(
+#       lat,
+#       long,
+#       square_km,
+#       image_source = "mapbox",
+#       image_type = "terrain-rgb",
+#       max_tiles = max_tiles,
+#       api_key = api_key
+#     )
+#
+#   DEM = -10000 + ((
+#     raster::raster(mapbox_terrain, layer = 1) * 256 * 256 +
+#       raster::raster(mapbox_terrain, layer = 2) * 256 +
+#       raster::raster(mapbox_terrain, layer = 3)) * 0.1)
+#
+#   return(DEM)
+#
+# }
 
-  mapbox_terrain <-
-    slippy_raster(
-      lat,
-      long,
-      square_km,
-      image_source = "mapbox",
-      image_type = "terrain-rgb",
-      max_tiles = max_tiles,
-      api_key = api_key
-    )
+mapbox_dem <- function(lat, long, square_km, width_buffer = 1, max_tiles = 10, api_key) {
 
-  DEM = -10000 + ((
-    raster::raster(mapbox_terrain, layer = 1) * 256 * 256 +
-      raster::raster(mapbox_terrain, layer = 2) * 256 +
-      raster::raster(mapbox_terrain, layer = 3)) * 0.1)
+  mapbox_terrain <- slippy_raster(
+    lat, long, square_km,
+    image_source = "mapbox", image_type = "terrain-rgb",
+    max_tiles = max_tiles, api_key = api_key
+  )
 
+  # BEFORE: raster::raster(x, layer = n) to access individual bands
+  # AFTER:  x[[n]] — standard terra layer indexing
+  # Mapbox terrain-rgb encoding: elevation = -10000 + (R*256^2 + G*256 + B) * 0.1
+  DEM <- -10000 + ((mapbox_terrain[[1]] * 256 * 256 +
+                      mapbox_terrain[[2]] * 256 +
+                      mapbox_terrain[[3]]) * 0.1)
   return(DEM)
-
 }

@@ -15,25 +15,40 @@
 #'
 #' dem <- mapzen_dem(lat, long, square_km, max_tiles = 2)
 #' @export
-mapzen_dem <- function(lat, long, square_km, width_buffer = 1, max_tiles = 10){
+# mapzen_dem <- function(lat, long, square_km, width_buffer = 1, max_tiles = 10){
+#
+#   mapzen_terrain <-
+#     slippy_raster(
+#       lat,
+#       long,
+#       square_km,
+#       image_source = "mapzen",
+#       image_type = "dem",
+#       max_tiles = max_tiles
+#     )
+#
+#   #(red * 256 + green + blue / 256) - 32768
+#
+#   DEM <-
+#     (raster::raster(mapzen_terrain, layer = 1) * 256 +
+#       raster::raster(mapzen_terrain, layer = 2) +
+#       raster::raster(mapzen_terrain, layer = 3) / 256) - 32768
+#
+#   return(DEM)
+#
+# }
 
-  mapzen_terrain <-
-    slippy_raster(
-      lat,
-      long,
-      square_km,
-      image_source = "mapzen",
-      image_type = "dem",
-      max_tiles = max_tiles
-    )
+mapzen_dem <- function(lat, long, square_km, width_buffer = 1, max_tiles = 10) {
 
-  #(red * 256 + green + blue / 256) - 32768
+  mapzen_terrain <- slippy_raster(
+    lat, long, square_km,
+    image_source = "mapzen", image_type = "dem",
+    max_tiles = max_tiles
+  )
 
-  DEM <-
-    (raster::raster(mapzen_terrain, layer = 1) * 256 +
-      raster::raster(mapzen_terrain, layer = 2) +
-      raster::raster(mapzen_terrain, layer = 3) / 256) - 32768
-
+  # Mapzen terrarium encoding: elevation = (R*256 + G + B/256) - 32768
+  DEM <- (mapzen_terrain[[1]] * 256 +
+            mapzen_terrain[[2]] +
+            mapzen_terrain[[3]] / 256) - 32768
   return(DEM)
-
 }

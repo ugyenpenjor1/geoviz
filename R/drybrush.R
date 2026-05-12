@@ -11,25 +11,45 @@
 #' @examples
 #' overlay_image <- drybrush(example_raster())
 #' @export
-drybrush <- function(raster_dem, aggregation_factor = 10, max_colour_altitude = 30, opacity = 0.5, elevation_palette = c("#3f3f3f", "#ffa500")){
+# drybrush <- function(raster_dem, aggregation_factor = 10, max_colour_altitude = 30, opacity = 0.5, elevation_palette = c("#3f3f3f", "#ffa500")){
+#
+#   rasterBase <- raster::aggregate(raster_dem, fun = min, fact = 10)
+#
+#   rasterBase <- raster::resample(rasterBase, raster_dem)
+#
+#   drybrush_distance <- raster_dem - rasterBase
+#
+#   drybrush_distance[is.na(drybrush_distance)] <- 0
+#   drybrush_distance[drybrush_distance < 0] <- 0
+#
+#   drybrush_distance_std <- drybrush_distance / max_colour_altitude
+#
+#   drybrush_distance_std[drybrush_distance_std > 1] <- 1
+#
+#   elevation_overlay <- elevation_shade(drybrush_distance_std, elevation_palette = elevation_palette)
+#
+#   elevation_overlay[,,4] <-  opacity
+#
+#   elevation_overlay
+#
+# }
 
-  rasterBase <- raster::aggregate(raster_dem, fun = min, fact = 10)
+drybrush <- function(raster_dem, aggregation_factor = 10, max_colour_altitude = 30,
+                     opacity = 0.5, elevation_palette = c("#3f3f3f", "#ffa500")) {
 
-  rasterBase <- raster::resample(rasterBase, raster_dem)
+  # terra::aggregate replaces raster::aggregate (same argument names, same behaviour)
+  rasterBase <- terra::aggregate(raster_dem, fact = aggregation_factor, fun = "min")
+  # terra::resample replaces raster::resample
+  rasterBase <- terra::resample(rasterBase, raster_dem, method = "bilinear")
 
   drybrush_distance <- raster_dem - rasterBase
-
   drybrush_distance[is.na(drybrush_distance)] <- 0
-  drybrush_distance[drybrush_distance < 0] <- 0
+  drybrush_distance[drybrush_distance < 0]    <- 0
 
   drybrush_distance_std <- drybrush_distance / max_colour_altitude
-
   drybrush_distance_std[drybrush_distance_std > 1] <- 1
 
-  elevation_overlay <- elevation_shade(drybrush_distance_std, elevation_palette = elevation_palette)
-
-  elevation_overlay[,,4] <-  opacity
-
+  elevation_overlay      <- elevation_shade(drybrush_distance_std, elevation_palette = elevation_palette)
+  elevation_overlay[,,4] <- opacity
   elevation_overlay
-
 }

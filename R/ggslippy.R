@@ -25,22 +25,46 @@
 #' ggplot() +
 #'   ggslippy(gg_overlay_image, set_coord_equal = FALSE)
 #' @export
-ggslippy <- function(slippy_raster, alpha = 1, set_coord_equal = TRUE){
+# ggslippy <- function(slippy_raster, alpha = 1, set_coord_equal = TRUE){
+#
+#   image_df <- raster::as.data.frame(slippy_raster, xy = TRUE)
+#
+#   names(image_df) <- c("x", "y", "red", "green", "blue")
+#
+#   image_df$hex <- grDevices::rgb(image_df$red, image_df$green, image_df$blue, maxColorValue = 255)
+#
+#   gg_out <- list(
+#     ggplot2::geom_raster(data = image_df, ggplot2::aes_string(x = "x", y = "y", fill = "hex"), alpha = alpha),
+#     ggplot2::scale_fill_identity()
+#   )
+#
+#   if(set_coord_equal){
+#     gg_out <- append(gg_out, ggplot2::coord_equal())
+#   }
+#
+#   gg_out
+# }
 
-  image_df <- raster::as.data.frame(slippy_raster, xy = TRUE)
+ggslippy <- function(slippy_raster, alpha = 1, set_coord_equal = TRUE) {
 
+  # terra equivalent of raster::as.data.frame(x, xy = TRUE)
+  image_df        <- as.data.frame(slippy_raster, xy = TRUE)
   names(image_df) <- c("x", "y", "red", "green", "blue")
+  image_df$hex    <- grDevices::rgb(
+    image_df$red, image_df$green, image_df$blue,
+    maxColorValue = 255
+  )
 
-  image_df$hex <- grDevices::rgb(image_df$red, image_df$green, image_df$blue, maxColorValue = 255)
-
+  # REPLACED aes_string() (deprecated in ggplot2 3.x) with aes() + .data pronoun
   gg_out <- list(
-    ggplot2::geom_raster(data = image_df, ggplot2::aes_string(x = "x", y = "y", fill = "hex"), alpha = alpha),
+    ggplot2::geom_raster(
+      data  = image_df,
+      ggplot2::aes(x = .data$x, y = .data$y, fill = .data$hex),
+      alpha = alpha
+    ),
     ggplot2::scale_fill_identity()
   )
 
-  if(set_coord_equal){
-    gg_out <- append(gg_out, ggplot2::coord_equal())
-  }
-
+  if (set_coord_equal) gg_out <- append(gg_out, ggplot2::coord_equal())
   gg_out
 }

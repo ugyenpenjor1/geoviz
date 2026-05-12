@@ -9,8 +9,12 @@
 #'
 #' example_raster <- example_raster()
 #' @export
-example_raster <- function(){
-  raster::raster(system.file("extdata/example.tif", package = "geoviz"))
+# example_raster <- function(){
+#   raster::raster(system.file("extdata/example.tif", package = "geoviz"))
+# }
+example_raster <- function() {
+  # terra::rast replaces raster::raster for reading files
+  terra::rast(system.file("extdata/example.tif", package = "geoviz"))
 }
 
 
@@ -24,6 +28,10 @@ example_raster <- function(){
 #'
 #' igc <- example_igc()
 #' @export
-example_igc <- function(){
+# example_igc <- function(){
+#   read_igc(system.file("extdata/example.igc", package = "geoviz"))
+# }
+
+example_igc <- function() {
   read_igc(system.file("extdata/example.igc", package = "geoviz"))
 }

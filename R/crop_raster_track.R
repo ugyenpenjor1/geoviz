@@ -11,17 +11,42 @@
 #' @examples
 #' crop_raster_track(example_raster(), example_igc()$lat, example_igc()$long)
 #' @export
-crop_raster_track <- function(raster_input, lat_points, long_points, width_buffer = 1, increase_resolution = 1){
+# crop_raster_track <- function(raster_input, lat_points, long_points, width_buffer = 1, increase_resolution = 1){
+#
+#   bounding_shape <- track_bounding_box(lat_points, long_points, width_buffer)
+#
+#   #Convert to match raster projection and crop
+#   bounding_shape <- sf::st_transform(bounding_shape, crs = sf::st_crs(raster::crs(raster_input)))
+#
+#   # raster_crop <- raster::crop(raster_input, bounding_shape)
+#   raster_crop <- raster::crop(
+#     raster_input,
+#     methods::as(bounding_shape, "Spatial")
+#   )
+#
+#   raster_crop <- raster::disaggregate(raster_crop, increase_resolution,
+#                                       method = "bilinear")
+#
+#   return(raster_crop)
+# }
+
+crop_raster_track <- function(raster_input, lat_points, long_points,
+                              width_buffer = 1, increase_resolution = 1) {
 
   bounding_shape <- track_bounding_box(lat_points, long_points, width_buffer)
 
-  #Convert to match raster projection and crop
-  bounding_shape <- sp::spTransform(bounding_shape, sp::CRS(as.character(raster::crs(raster_input))))
+  # BEFORE: sp::spTransform + methods::as(bounding_shape, "Spatial")
+  # AFTER:  sf::st_transform + terra::vect()
+  bounding_shape <- sf::st_transform(
+    bounding_shape,
+    crs = sf::st_crs(terra::crs(raster_input))
+  )
 
-  raster_crop <- raster::crop(raster_input, bounding_shape)
+  raster_crop <- terra::crop(raster_input, terra::vect(bounding_shape))
 
-  raster_crop <- raster::disaggregate(raster_crop, increase_resolution,
-                                      method = "bilinear")
+  if (increase_resolution > 1) {
+    raster_crop <- terra::disagg(raster_crop, fact = increase_resolution, method = "bilinear")
+  }
 
   return(raster_crop)
 }

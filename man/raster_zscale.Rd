@@ -4,10 +4,10 @@
 \alias{raster_zscale}
 \title{Approximates the zscale of a raster Digital Elevation Model for 'rayshader'}
 \usage{
-raster_zscale(raster, height_units = "m")
+raster_zscale(raster_input, height_units = "m")
 }
 \arguments{
-\item{raster}{A raster object of elevation data values}
+\item{raster_input}{A raster object of elevation data values}
 
 \item{height_units}{Elevation units of the raster, c("m", "feet")}
 }

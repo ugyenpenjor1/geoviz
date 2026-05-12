@@ -16,39 +16,92 @@
 #'   image_type = "watercolor",
 #'   max_tiles = 2)
 #' @export
-slippy_overlay <- function(raster_base, image_source = "stamen", image_type = "watercolor", max_tiles = 10, api_key, return_png = TRUE, png_opacity = 0.9){
+# slippy_overlay <- function(raster_base, image_source = "stamen", image_type = "watercolor", max_tiles = 10, api_key, return_png = TRUE, png_opacity = 0.9){
+#
+#   #Calc bounding box to cover the raster
+#   bounding_box <- methods::as(raster::extent(raster_base), "SpatialPolygons")
+#
+#   bounding_box <- sf::st_as_sfc(sf::st_bbox(
+#     raster::extent(raster_base),
+#     crs = sf::st_crs(raster::crs(raster_base))
+#   ))
+#   bounding_box <- sf::st_transform(bounding_box, crs = 4326)
+#
+#   #Request slippy map
+#   raster_out <- get_slippy_map(bounding_box, image_source = image_source, image_type = image_type, max_tiles = max_tiles, api_key = api_key)
+#
+#   #Transform slippy map to a png that covers raster_input
+#   raster_out = raster::projectRaster(raster_out, crs = raster::crs(raster_base))
+#
+#   raster_out <- raster::resample(raster_out, raster_base)
+#
+#   if(!return_png){
+#     return(raster_out)
+#   }
+#
+#   temp_map_image <- tempfile(fileext = ".png")
+#
+#   raster_to_png(raster_out, temp_map_image)
+#
+#   map_image <- png::readPNG(temp_map_image)
+#   file.remove(temp_map_image)
+#
+#   #add an alpha layer if one is not present
+#   if(dim(map_image)[3]==3){
+#     alpha_layer <- matrix(png_opacity, nrow = dim(map_image)[1], ncol = dim(map_image)[2])
+#
+#     map_image <- abind::abind(map_image, alpha_layer)
+#   } else {
+#     map_image[,,4] <- png_opacity
+#   }
+#
+#   return(map_image)
+# }
 
-  #Calc bounding box to cover the raster
-  bounding_box <- methods::as(raster::extent(raster_base), "SpatialPolygons")
+slippy_overlay <- function(raster_base, image_source = "stamen", image_type = "watercolor",
+                           max_tiles = 10, api_key, return_png = TRUE, png_opacity = 0.9) {
 
-  sp::proj4string(bounding_box) <- as.character(raster::crs(raster_base))
-
-  bounding_box <- sp::spTransform(bounding_box, sp::CRS("+proj=longlat +datum=WGS84 +no_defs"))
-
-  #Request slippy map
-  raster_out <- get_slippy_map(bounding_box, image_source = image_source, image_type = image_type, max_tiles = max_tiles, api_key = api_key)
-
-  #Transform slippy map to a png that covers raster_input
-  raster_out = raster::projectRaster(raster_out, crs = raster::crs(raster_base))
-
-  raster_out <- raster::resample(raster_out, raster_base)
-
-  if(!return_png){
-    return(raster_out)
+  # ── 1. Safety Check: Ensure CRS and Extent are valid ────────────────────────
+  # This prevents the "!anyNA(x) is not TRUE" error in sf::st_as_sfc
+  if (terra::crs(raster_base) == "") {
+    stop("raster_base has no CRS. Please set a projection (e.g., terra::crs(r) <- 'EPSG:27700') before calling slippy_overlay.")
   }
 
+  e <- terra::ext(raster_base)
+  if (any(is.na(c(e$xmin, e$xmax, e$ymin, e$ymax)))) {
+    stop("raster_base has an invalid or missing extent (coordinates are NA). Ensure the raster is loaded correctly.")
+  }
+
+  e_vec <- as.vector(terra::ext(raster_base))   # xmin,xmax,ymin,ymax
+
+  ext_poly     <- terra::as.polygons(
+    terra::ext(raster_base),
+    crs = terra::crs(raster_base)
+  )
+  ext_poly_wgs84 <- terra::project(ext_poly, "EPSG:4326")
+  bounding_box   <- sf::st_as_sf(ext_poly_wgs84)
+
+  # rest of slippy_overlay() unchanged from here...
+  raster_out <- get_slippy_map(
+    bounding_box,
+    image_source = image_source,
+    image_type   = image_type,
+    max_tiles    = max_tiles,
+    api_key      = api_key
+  )
+  raster_out <- terra::project(raster_out, terra::crs(raster_base))
+  raster_out <- terra::resample(raster_out, raster_base)
+
+  if (!return_png) return(raster_out)
+
   temp_map_image <- tempfile(fileext = ".png")
-
   raster_to_png(raster_out, temp_map_image)
-
   map_image <- png::readPNG(temp_map_image)
   file.remove(temp_map_image)
 
-  #add an alpha layer if one is not present
-  if(dim(map_image)[3]==3){
+  if (dim(map_image)[3] == 3) {
     alpha_layer <- matrix(png_opacity, nrow = dim(map_image)[1], ncol = dim(map_image)[2])
-
-    map_image <- abind::abind(map_image, alpha_layer)
+    map_image   <- abind::abind(map_image, alpha_layer)
   } else {
     map_image[,,4] <- png_opacity
   }

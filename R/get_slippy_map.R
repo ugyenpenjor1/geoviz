@@ -14,85 +14,241 @@
 #'   image_type = "watercolor",
 #'   max_tiles = 5)
 #' @export
-get_slippy_map <- function(bounding_box, image_source = "stamen", image_type = "watercolor", max_tiles = 10, api_key){
+# get_slippy_map <- function(bounding_box, image_source = "stamen", image_type = "watercolor", max_tiles = 10, api_key) {
+#
+#   # ── Transform bounding_box to WGS84 ─────────────────────────────────────────
+#   # BEFORE: mixed sp/raster approach that breaks on sf objects
+#   # AFTER:  handle both Raster and sf/sfc objects cleanly
+#
+#   if (inherits(bounding_box, "Raster")) {
+#     # Raster object — reproject using raster
+#     bounding_box <- raster::projectRaster(
+#       bounding_box,
+#       crs = "+proj=longlat +datum=WGS84 +no_defs"
+#     )
+#     xt <- raster::extent(bounding_box)
+#     overlay_bbox <- sf::st_bbox(
+#       c(xmin = xt@xmin, xmax = xt@xmax, ymin = xt@ymin, ymax = xt@ymax),
+#       crs = sf::st_crs(4326)
+#     )
+#
+#   } else {
+#     # sf / sfc object — use sf::st_transform instead of sp::spTransform
+#     bounding_box <- sf::st_transform(bounding_box, crs = 4326)
+#     overlay_bbox <- sf::st_bbox(bounding_box)
+#   }
+#
+#   # ── Build tile grid ───────────────────────────────────────────────────────────
+#   tile_grid <- slippymath::bbox_to_tile_grid(overlay_bbox, max_tiles = max_tiles)
+#
+#   if (tile_grid$zoom > 11 & image_source == "mapbox" & image_type == "terrain-rgb") {
+#     message(glue::glue("Zoom level with max_tiles = {max_tiles} is {tile_grid$zoom}. Resetting zoom to 11, which is max for mapbox.terrain-rgb."))
+#     tile_grid <- slippymath::bbox_to_tile_grid(overlay_bbox, zoom = 11)
+#   }
+#
+#   # ── Build query string ────────────────────────────────────────────────────────
+#   # NOTE: slippymath uses {z} not {zoom} in URL templates
+#   # Stamen tiles moved from tile.stamen.com to Stadia in 2023
+#
+#   if (image_source == "stamen") {
+#
+#     # Map old stamen image_type names to new Stadia URL paths
+#     stamen_type <- switch(image_type,
+#                           "watercolor"        = "stamen_watercolor",
+#                           "toner"             = "stamen_toner",
+#                           "toner-background"  = "stamen_toner_background",
+#                           "toner-lite"        = "stamen_toner_lite",
+#                           "terrain"           = "stamen_terrain",
+#                           paste0("stamen_", image_type)   # fallback for any other type
+#     )
+#
+#     ext <- ifelse(stringr::str_detect(image_type, "watercolor"), "jpg", "png")
+#     query_string <- paste0(
+#       "https://tiles.stadiamaps.com/tiles/", stamen_type,
+#       "/{z}/{x}/{y}.", ext
+#     )
+#
+#   } else if (image_source == "mapbox") {
+#
+#     if (stringr::str_detect(image_type, "\\/")) {
+#       # Custom Mapbox style URL
+#       query_string <- paste0(
+#         "https://api.mapbox.com/styles/v1/", image_type,
+#         "/tiles/{z}/{x}/{y}?access_token=", api_key
+#       )
+#     } else {
+#       # Standard Mapbox tileset
+#       query_string <- paste0(
+#         "https://api.mapbox.com/v4/mapbox.", image_type,
+#         "/{z}/{x}/{y}.jpg90?access_token=", api_key
+#       )
+#     }
+#
+#   } else if (image_source == "mapzen" & image_type == "dem") {
+#     query_string <- "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+#
+#   } else if (image_source == "osm") {
+#     query_string <- "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+#
+#   } else {
+#     stop(glue::glue("Unknown source '{image_source}'"))
+#   }
+#
+#   # ── Download tiles ────────────────────────────────────────────────────────────
+#   tile_dir <- tempfile(pattern = "map_tiles_")
+#   dir.create(tile_dir)
+#
+#   # images <- purrr::pmap(
+#   #   tile_grid$tiles,
+#   #   function(x, y, zoom) {
+#   #     outfile <- glue::glue("{tile_dir}/{x}_{y}.jpg")
+#   #     curl::curl_download(
+#   #       url      = glue::glue(query_string),
+#   #       destfile = outfile
+#   #     )
+#   #     outfile
+#   #   },
+#   #   zoom = tile_grid$zoom
+#   # )
+#   images <- purrr::pmap(
+#     tile_grid$tiles,
+#     function(x, y, zoom) {
+#
+#       z <- zoom
+#
+#       outfile <- glue::glue("{tile_dir}/{x}_{y}.jpg")
+#
+#       curl::curl_download(
+#         url      = glue::glue(query_string, z = zoom), #glue::glue(query_string),
+#         destfile = outfile
+#       )
+#
+#       outfile
+#     },
+#     zoom = tile_grid$zoom
+#   )
+#
+#   # ── Compose and reproject output raster ──────────────────────────────────────
+#   raster_out <- compose_tile_grid(tile_grid, images)
+#   raster_out <- raster::projectRaster(raster_out, crs = raster::crs(bounding_box))
+#
+#   unlink(tile_dir, recursive = TRUE)
+#   return(raster_out)
+# }
 
-  #Transform bounding_box to WGS84
-  if(stringr::str_detect(class(bounding_box)[1], "Raster")){
-    bounding_box <- raster::projectRaster(bounding_box, crs = "+proj=longlat +datum=WGS84 +no_defs")
+get_slippy_map <- function(bounding_box, image_source = "stamen",
+                           image_type = "watercolor", max_tiles = 10, api_key) {
+
+  if (inherits(bounding_box, "SpatRaster")) {
+    orig_crs <- terra::crs(bounding_box)
+
+    # Step 1: extract extent as a SpatVector polygon in the raster's own CRS
+    ext_poly <- terra::as.polygons(
+      terra::ext(bounding_box),
+      crs = terra::crs(bounding_box)
+    )
+
+    # Step 2: project that tiny polygon to WGS84 — fast, no raster data moved
+    ext_poly_wgs84 <- terra::project(ext_poly, "EPSG:4326")
+
+    # Step 3: build sf bbox — guaranteed valid coordinates
+    overlay_bbox <- sf::st_bbox(sf::st_as_sf(ext_poly_wgs84))
+
   } else {
-    bounding_box <- sp::spTransform(bounding_box, sp::CRS("+proj=longlat +datum=WGS84 +no_defs"))
+    orig_crs     <- sf::st_crs(bounding_box)$wkt
+    bounding_box <- sf::st_transform(bounding_box, crs = 4326)
+    overlay_bbox <- sf::st_bbox(bounding_box)
   }
 
-  xt_scene <- raster::extent(bounding_box)
-
-  overlay_bbox <-
-    sf::st_bbox(c(xmin = xt_scene@xmin,
-                  xmax = xt_scene@xmax,
-                  ymin = xt_scene@ymin,
-                  ymax = xt_scene@ymax),
-                crs = sf::st_crs("+proj=longlat +datum=WGS84 +no_defs"))
-
+  # ── Build tile grid ──────────────────────────────────────────────────────────
   tile_grid <- slippymath::bbox_to_tile_grid(overlay_bbox, max_tiles = max_tiles)
 
-  if(tile_grid$zoom > 11 & image_source == "mapbox" & image_type == "terrain-rgb"){
-    message(glue::glue("Zoom level with max_tiles = {max_tiles} is {tile_grid$zoom}. Resetting zoom to 11, which is max for mapbox.terrain-rgb."))
+  if (tile_grid$zoom > 11 && image_source == "mapbox" && image_type == "terrain-rgb") {
+    message(glue::glue("Zoom {tile_grid$zoom} > 11 (mapbox terrain-rgb max). Resetting to 11."))
     tile_grid <- slippymath::bbox_to_tile_grid(overlay_bbox, zoom = 11)
   }
 
+  # ── Build tile URL template ──────────────────────────────────────────────────
+  if (image_source == "stamen") {
 
-  #Stamen Maps
-  if(image_source=="stamen"){
-    if(stringr::str_detect(image_type, "watercolor")){
-      query_string <- paste0("http://tile.stamen.com/", image_type, "/{zoom}/{x}/{y}.jpg")
+    # Stamen tiles moved from tile.stamen.com to Stadia Maps in 2023.
+    # Map old image_type names to new Stadia tile path names.
+    stamen_type <- switch(image_type,
+                          "watercolor"        = "stamen_watercolor",
+                          "toner"             = "stamen_toner",
+                          "toner-background"  = "stamen_toner_background",
+                          "toner-lite"        = "stamen_toner_lite",
+                          "terrain"           = "stamen_terrain",
+                          paste0("stamen_", image_type)   # pass-through for any future types
+    )
+    ext <- if (stringr::str_detect(image_type, "watercolor")) "jpg" else "png"
+
+    if (!missing(api_key) && nchar(api_key) > 0) {
+      # Stadia key supplied — full quality Stamen tiles
+      query_string <- paste0(
+        "https://tiles.stadiamaps.com/tiles/", stamen_type,
+        "/{z}/{x}/{y}.", ext, "?api_key=", api_key
+      )
     } else {
-      query_string <- paste0("http://tile.stamen.com/", image_type, "/{zoom}/{x}/{y}.png")
+      # No key — fall back to free OpenStreetMap tiles
+      message("No Stadia API key supplied. Falling back to OpenStreetMap.")
+      message("Get a free key at https://stadiamaps.com to restore Stamen tile quality.")
+      query_string <- "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
     }
 
-  #Mapbox maps
-  } else if (image_source=="mapbox"){
+  } else if (image_source == "osm") {
+    # OpenStreetMap — free, no key, good for general topographic context
+    query_string <- "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 
-    if(stringr::str_detect(image_type, "\\/")){ #image_type is a custom mapbox map url
-
-      query_string <- paste0("https://api.mapbox.com/styles/v1/", image_type, "/tiles/{zoom}/{x}/{y}",
-                             "?access_token=",
-                             api_key)
-
+  } else if (image_source == "mapbox") {
+    # Mapbox — best option for high-resolution satellite imagery.
+    # Free token at https://account.mapbox.com
+    # Use image_type = "satellite" for aerial imagery.
+    if (stringr::str_detect(image_type, "\\/")) {
+      # Custom Mapbox style URL (format: "username/style_id")
+      query_string <- paste0(
+        "https://api.mapbox.com/styles/v1/", image_type,
+        "/tiles/{z}/{x}/{y}?access_token=", api_key
+      )
     } else {
-
-    query_string <- paste0("https://api.mapbox.com/v4/mapbox.", image_type, "/{zoom}/{x}/{y}.jpg90",
-                           "?access_token=",
-                           api_key)
+      # Standard Mapbox tileset (satellite, terrain-rgb, etc.)
+      query_string <- paste0(
+        "https://api.mapbox.com/v4/mapbox.", image_type,
+        "/{z}/{x}/{y}.jpg90?access_token=", api_key
+      )
     }
 
-  #Mapzen maps
-  } else if (image_source=="mapzen" & image_type=="dem"){
-
-    query_string <- "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{zoom}/{x}/{y}.png"
+  } else if (image_source == "mapzen" && image_type == "dem") {
+    query_string <- "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
 
   } else {
-    stop(glue::glue("unknown source '{image_source}'"))
+    stop(glue::glue(
+      "Unknown image_source '{image_source}'. ",
+      "Valid options: 'stamen', 'osm', 'mapbox', 'mapzen'."
+    ))
   }
 
-  #create a temporary dir to hold tiles
+  # ── Download tiles ───────────────────────────────────────────────────────────
   tile_dir <- tempfile(pattern = "map_tiles_")
   dir.create(tile_dir)
 
-  images <-
-    purrr::pmap(tile_grid$tiles,
-                function(x, y, zoom){
-                  outfile <- glue::glue("{tile_dir}/{x}_{y}.jpg")
-                  curl::curl_download(url = glue::glue(query_string),
-                                      destfile = outfile)
-                  outfile
-                },
-                zoom = tile_grid$zoom)
+  images <- purrr::pmap(
+    tile_grid$tiles,
+    function(x, y, zoom) {
+      z       <- zoom   # glue needs variable named 'z' for {z} in URL template
+      outfile <- glue::glue("{tile_dir}/{x}_{y}.jpg")
+      curl::curl_download(url = glue::glue(query_string), destfile = outfile)
+      outfile
+    },
+    zoom = tile_grid$zoom
+  )
 
-  raster_out <- compose_tile_grid(tile_grid, images) #not slippymath version due to png issue
+  # ── Compose, reproject and return ───────────────────────────────────────────
+  # compose_tile_grid returns a SpatRaster
+  # terra::project replaces raster::projectRaster
+  raster_out <- compose_tile_grid(tile_grid, images)
+  raster_out <- terra::project(raster_out, orig_crs)
 
-  #Transform raster to match projection of the original bounding box
-  raster_out <- raster::projectRaster(raster_out, crs = raster::crs(bounding_box))
-
-  unlink(tile_dir, recursive = TRUE)  #kill the temp directory containing tiles
-
+  unlink(tile_dir, recursive = TRUE)
   return(raster_out)
 }

@@ -32,38 +32,77 @@
 #'    example_raster(), alpha_max = 0, alpha_min = 0.8, pct_alt_low = 0.05,
 #'    pct_alt_high = 0.25)
 #' @export
-elevation_transparency <- function(overlay_image, raster_dem, alpha_max = 0.4, alpha_min = 0, pct_alt_low = 0.05, pct_alt_high = 0.25){
+# elevation_transparency <- function(overlay_image, raster_dem, alpha_max = 0.4, alpha_min = 0, pct_alt_low = 0.05, pct_alt_high = 0.25){
+#
+#   if (pct_alt_high == pct_alt_low){
+#     stop("pct_alt_high must be > pct_alt_low")
+#   }
+#
+#   if(length(is.na(raster_dem)) > 0){
+#     message("There are NA values in raster_dem. Assuming they are min(raster_dem[], na.rm = TRUE) for shading.")
+#     raster_dem[is.na(raster_dem)] <- min(raster_dem[], na.rm = TRUE)
+#   }
+#
+#   pct_max_height <- (raster::as.array(raster_dem) - min(raster::as.array(raster_dem))) / (max(raster::as.array(raster_dem)) - min(raster::as.array(raster_dem)))
+#
+#   pct_max_height_alpha <- pct_max_height
+#
+#   pct_max_height_alpha[pct_max_height[] < pct_alt_low] <- alpha_max
+#
+#   pct_max_height_alpha[pct_max_height[] > pct_alt_high] <- alpha_min
+#
+#   if(alpha_min < alpha_max){
+#     pct_max_height_alpha[pct_max_height <= pct_alt_high &
+#                            pct_max_height >= pct_alt_low] <-
+#       (1 - (pct_max_height[pct_max_height[] <= pct_alt_high &
+#                              pct_max_height[] >= pct_alt_low] - pct_alt_low) / (pct_alt_high - pct_alt_low)) * alpha_max
+#   } else {
+#     pct_max_height_alpha[pct_max_height <= pct_alt_high &
+#                            pct_max_height >= pct_alt_low] <-
+#       ((pct_max_height[pct_max_height[] <= pct_alt_high &
+#                          pct_max_height[] >= pct_alt_low] - pct_alt_low) / (pct_alt_high - pct_alt_low)) * alpha_min
+#   }
+#
+#   overlay_image[,,4] <- pct_max_height_alpha
+#
+#   overlay_image
+# }
 
-  if (pct_alt_high == pct_alt_low){
-    stop("pct_alt_high must be > pct_alt_low")
+elevation_transparency <- function(overlay_image, raster_dem, alpha_max = 0.4,
+                                   alpha_min = 0, pct_alt_low = 0.05, pct_alt_high = 0.25) {
+
+  if (pct_alt_high == pct_alt_low) stop("pct_alt_high must be > pct_alt_low")
+
+  nr   <- terra::nrow(raster_dem)
+  nc   <- terra::ncol(raster_dem)
+  vals <- terra::values(raster_dem)[, 1]
+
+  if (any(is.na(vals))) {
+    message("NA values in raster_dem - treating as min elevation.")
+    vals[is.na(vals)] <- min(vals, na.rm = TRUE)
   }
 
-  if(length(is.na(raster_dem)) > 0){
-    message("There are NA values in raster_dem. Assuming they are min(raster_dem[], na.rm = TRUE) for shading.")
-    raster_dem[is.na(raster_dem)] <- min(raster_dem[], na.rm = TRUE)
-  }
+  # Normalise elevation to 0-1
+  # BEFORE: raster::as.array() used to reshape; now reshape with matrix()
+  val_min  <- min(vals)
+  val_max  <- max(vals)
+  # byrow = TRUE because terra::values is row-major
+  pct      <- matrix((vals - val_min) / (val_max - val_min), nrow = nr, ncol = nc, byrow = TRUE)
+  pct_alpha <- pct
 
-  pct_max_height <- (raster::as.array(raster_dem) - min(raster::as.array(raster_dem))) / (max(raster::as.array(raster_dem)) - min(raster::as.array(raster_dem)))
+  pct_alpha[pct < pct_alt_low]  <- alpha_max
+  pct_alpha[pct > pct_alt_high] <- alpha_min
 
-  pct_max_height_alpha <- pct_max_height
+  in_range <- (pct >= pct_alt_low & pct <= pct_alt_high)
 
-  pct_max_height_alpha[pct_max_height[] < pct_alt_low] <- alpha_max
-
-  pct_max_height_alpha[pct_max_height[] > pct_alt_high] <- alpha_min
-
-  if(alpha_min < alpha_max){
-    pct_max_height_alpha[pct_max_height <= pct_alt_high &
-                           pct_max_height >= pct_alt_low] <-
-      (1 - (pct_max_height[pct_max_height[] <= pct_alt_high &
-                             pct_max_height[] >= pct_alt_low] - pct_alt_low) / (pct_alt_high - pct_alt_low)) * alpha_max
+  if (alpha_min < alpha_max) {
+    pct_alpha[in_range] <-
+      (1 - (pct[in_range] - pct_alt_low) / (pct_alt_high - pct_alt_low)) * alpha_max
   } else {
-    pct_max_height_alpha[pct_max_height <= pct_alt_high &
-                           pct_max_height >= pct_alt_low] <-
-      ((pct_max_height[pct_max_height[] <= pct_alt_high &
-                         pct_max_height[] >= pct_alt_low] - pct_alt_low) / (pct_alt_high - pct_alt_low)) * alpha_min
+    pct_alpha[in_range] <-
+      ((pct[in_range] - pct_alt_low) / (pct_alt_high - pct_alt_low)) * alpha_min
   }
 
-  overlay_image[,,4] <- pct_max_height_alpha
-
+  overlay_image[,,4] <- pct_alpha
   overlay_image
 }

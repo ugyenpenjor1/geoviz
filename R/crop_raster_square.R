@@ -11,29 +11,69 @@
 #' @examples
 #' crop_raster_square(example_raster(), lat = 54.513293, long = -3.045598, square_km = 0.01)
 #' @export
-crop_raster_square <- function(rasterIn, lat, long, square_km, increase_resolution = 1){
+# crop_raster_square <- function(rasterIn, lat, long, square_km, increase_resolution = 1){
+#
+#   bounding_shape <- square_bounding_box(lat, long, square_km)
+#
+#   bounding_shape <- sf::st_transform(bounding_shape, crs = sf::st_crs(raster::crs(rasterIn)))
+#
+#   raster_crop <- raster::crop(
+#     rasterIn,
+#     methods::as(bounding_shape, "Spatial")
+#   )
+#
+#   # Check that the resulting raster is square (identical lat and long resolution) and resample if it isn't. Needed for NASA ASTER data and maybe others.
+#   square_error <- nrow(raster_crop) / ncol(raster_crop)
+#
+#   if(square_error != 1){
+#
+#     max_edge <- max(c(nrow(raster_crop), ncol(raster_crop)))
+#
+#     template <- raster::raster(raster::extent(raster_crop), crs = raster::crs(raster_crop), nrow = max_edge, ncol = max_edge)
+#
+#     raster_crop <- raster::resample(raster_crop, template)
+#
+#   }
+#
+#   if(increase_resolution > 1){
+#     raster_crop <- raster::disaggregate(raster_crop, increase_resolution, method = 'bilinear')
+#   }
+#
+#   return(raster_crop)
+# }
+
+crop_raster_square <- function(rasterIn, lat, long, square_km, increase_resolution = 1) {
 
   bounding_shape <- square_bounding_box(lat, long, square_km)
 
-  bounding_shape <- sp::spTransform(bounding_shape, sp::CRS(as.character(raster::crs(rasterIn))))
+  # BEFORE: sp::spTransform + methods::as(bounding_shape, "Spatial") for raster::crop
+  # AFTER:  sf::st_transform + terra::vect() for terra::crop
+  bounding_shape <- sf::st_transform(
+    bounding_shape,
+    crs = sf::st_crs(terra::crs(rasterIn))
+  )
 
-  raster_crop <- raster::crop(rasterIn, bounding_shape)
+  # terra::vect() converts sf object to SpatVector — the terra equivalent of Spatial*
+  raster_crop <- terra::crop(rasterIn, terra::vect(bounding_shape))
 
-  # Check that the resulting raster is square (identical lat and long resolution) and resample if it isn't. Needed for NASA ASTER data and maybe others.
-  square_error <- nrow(raster_crop) / ncol(raster_crop)
+  # Ensure square output (needed for NASA ASTER and similar non-square rasters)
+  # terra::nrow/ncol replace nrow/ncol on raster objects
+  square_error <- terra::nrow(raster_crop) / terra::ncol(raster_crop)
 
-  if(square_error != 1){
-
-    max_edge <- max(c(nrow(raster_crop), ncol(raster_crop)))
-
-    template <- raster::raster(raster::extent(raster_crop), crs = raster::crs(raster_crop), nrow = max_edge, ncol = max_edge)
-
-    raster_crop <- raster::resample(raster_crop, template)
-
+  if (square_error != 1) {
+    max_edge <- max(terra::nrow(raster_crop), terra::ncol(raster_crop))
+    # terra::rast with ext/nrows/ncols arguments replaces raster::raster(extent, nrow, ncol)
+    template    <- terra::rast(
+      terra::ext(raster_crop),
+      nrows = max_edge, ncols = max_edge,
+      crs   = terra::crs(raster_crop)
+    )
+    raster_crop <- terra::resample(raster_crop, template)
   }
 
-  if(increase_resolution > 1){
-    raster_crop <- raster::disaggregate(raster_crop, increase_resolution, method = 'bilinear')
+  if (increase_resolution > 1) {
+    # terra::disagg replaces raster::disaggregate
+    raster_crop <- terra::disagg(raster_crop, fact = increase_resolution, method = "bilinear")
   }
 
   return(raster_crop)

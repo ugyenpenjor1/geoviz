@@ -10,7 +10,7 @@ mosaic_files(
   extract_zip = FALSE,
   file_match = ".*.asc",
   zip_file_match = ".*.zip",
-  raster_output_file = "mosaic_out.raster",
+  raster_output_file = "mosaic_out.tif",
   file_crs = NULL,
   raster_todisk = FALSE
 )

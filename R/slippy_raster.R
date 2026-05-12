@@ -23,21 +23,43 @@
 #'   image_type = "watercolor",
 #'   max_tiles = 5)
 #' @export
-slippy_raster <- function(lat, long, square_km, width_buffer = 1, image_source = "stamen", image_type = "watercolor", max_tiles = 10, api_key){
+# slippy_raster <- function(lat, long, square_km, width_buffer = 1, image_source = "stamen", image_type = "watercolor", max_tiles = 10, api_key){
+#
+#   if(length(lat) != length(long)){
+#     stop("lengths of lat and long do not match")
+#   }
+#
+#   #Calc bounding box
+#   if(length(lat)==1){
+#     bounding_box <- square_bounding_box(lat, long, square_km) #single point bounding box
+#   } else {
+#     bounding_box <- track_bounding_box(lat, long, width_buffer)
+#   }
+#
+#   #Request slippy map
+#   raster_out <- get_slippy_map(bounding_box, image_source = image_source, image_type = image_type, max_tiles = max_tiles, api_key = api_key)
+#
+#   return(raster_out)
+# }
 
-  if(length(lat) != length(long)){
-    stop("lengths of lat and long do not match")
-  }
+slippy_raster <- function(lat, long, square_km, width_buffer = 1,
+                          image_source = "stamen", image_type = "watercolor",
+                          max_tiles = 10, api_key) {
 
-  #Calc bounding box
-  if(length(lat)==1){
-    bounding_box <- square_bounding_box(lat, long, square_km) #single point bounding box
+  if (length(lat) != length(long)) stop("lengths of lat and long do not match")
+
+  bounding_box <- if (length(lat) == 1) {
+    square_bounding_box(lat, long, square_km)
   } else {
-    bounding_box <- track_bounding_box(lat, long, width_buffer)
+    track_bounding_box(lat, long, width_buffer)
   }
 
-  #Request slippy map
-  raster_out <- get_slippy_map(bounding_box, image_source = image_source, image_type = image_type, max_tiles = max_tiles, api_key = api_key)
-
-  return(raster_out)
+  # Both bounding box functions now return sf objects — get_slippy_map handles these
+  get_slippy_map(
+    bounding_box,
+    image_source = image_source,
+    image_type   = image_type,
+    max_tiles    = max_tiles,
+    api_key      = api_key
+  )
 }
