@@ -38,6 +38,7 @@ Stitches together files into a single raster
 Requires a target directory of files that can be read with raster::raster(), e.g. .asc files, or a directory of .zip files containing these files
 }
 \examples{
+\dontrun{
 # Merges two small example .asc files of LIDAR data
 # from https://environment.data.gov.uk (open government licence)
 
@@ -50,4 +51,5 @@ mosaic_files(path_to_files,
              extract_zip = TRUE, file_crs = "+init=epsg:27700")
 
 raster_mosaic <- raster::raster(paste0(path_to_output, '/mosaic_out.gri', sep = ''))
+}
 }

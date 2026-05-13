@@ -236,47 +236,97 @@ track_bounding_box <- function(lat_points, long_points, width_buffer) {
 #   tile_raster@data@values  → terra::values()  (no more S4 slot access)
 #   raster@legend@colortable → terra::coltab()
 #   do.call(raster::merge)   → Reduce(terra::merge)
+# compose_tile_grid <- function(tile_grid, images) {
+#
+#   bricks <- purrr::pmap(
+#     .l = list(x = tile_grid$tiles$x,
+#               y = tile_grid$tiles$y,
+#               image = images),
+#     .f = function(x, y, image, zoom) {
+#
+#       bbox      <- slippymath::tile_bbox(x, y, zoom)
+#       crs_proj4 <- attr(bbox, "crs")$proj4string  # slippymath attaches CRS as attribute
+#
+#       # Load tile image as terra SpatRaster
+#       raster_img <- terra::rast(image)
+#
+#       # Handle single-band paletted PNGs (slippymath downloads them as .jpg but they can be PNG)
+#       # BEFORE: raster_img@legend@colortable + raster::setValues
+#       # AFTER:  terra::coltab() returns data.frame(value, red, green, blue, alpha)
+#       if (terra::nlyr(raster_img) == 1) {
+#         ct <- terra::coltab(raster_img)[[1]]
+#         if (!is.null(ct) && nrow(ct) > 0) {
+#           vals    <- as.integer(terra::values(raster_img)[, 1])
+#           idx     <- match(vals, ct$value)
+#           r <- terra::setValues(raster_img, ct$red[idx])
+#           g <- terra::setValues(raster_img, ct$green[idx])
+#           b <- terra::setValues(raster_img, ct$blue[idx])
+#           raster_img <- c(r, g, b)
+#         }
+#       }
+#
+#       # Assign geographic extent - terra::ext() replaces raster::extent()
+#       terra::ext(raster_img) <- terra::ext(
+#         c(bbox["xmin"], bbox["xmax"], bbox["ymin"], bbox["ymax"])
+#       )
+#       terra::crs(raster_img) <- crs_proj4
+#
+#       raster_img
+#     },
+#     zoom = tile_grid$zoom
+#   )
+#
+#   # Merge tiles - Reduce(terra::merge) replaces do.call(raster::merge, bricks)
+#   if (length(bricks) == 1) {
+#     bricks[[1]]
+#   } else {
+#     Reduce(function(a, b) terra::merge(a, b), bricks)
+#   }
+# }
+
 compose_tile_grid <- function(tile_grid, images) {
 
   bricks <- purrr::pmap(
-    .l = list(x = tile_grid$tiles$x,
-              y = tile_grid$tiles$y,
-              image = images),
+    .l = list(
+      x     = tile_grid$tiles$x,
+      y     = tile_grid$tiles$y,
+      image = images
+    ),
     .f = function(x, y, image, zoom) {
 
-      bbox      <- slippymath::tile_bbox(x, y, zoom)
-      crs_proj4 <- attr(bbox, "crs")$proj4string  # slippymath attaches CRS as attribute
-
-      # Load tile image as terra SpatRaster
+      bbox       <- slippymath::tile_bbox(x, y, zoom)
       raster_img <- terra::rast(image)
 
-      # Handle single-band paletted PNGs (slippymath downloads them as .jpg but they can be PNG)
-      # BEFORE: raster_img@legend@colortable + raster::setValues
-      # AFTER:  terra::coltab() returns data.frame(value, red, green, blue, alpha)
+      # Handle single-band paletted PNGs
       if (terra::nlyr(raster_img) == 1) {
         ct <- terra::coltab(raster_img)[[1]]
         if (!is.null(ct) && nrow(ct) > 0) {
-          vals    <- as.integer(terra::values(raster_img)[, 1])
-          idx     <- match(vals, ct$value)
-          r <- terra::setValues(raster_img, ct$red[idx])
-          g <- terra::setValues(raster_img, ct$green[idx])
-          b <- terra::setValues(raster_img, ct$blue[idx])
-          raster_img <- c(r, g, b)
+          vals       <- as.integer(terra::values(raster_img)[, 1])
+          idx        <- match(vals, ct$value)
+          raster_img <- c(
+            terra::setValues(raster_img, ct$red[idx]),
+            terra::setValues(raster_img, ct$green[idx]),
+            terra::setValues(raster_img, ct$blue[idx])
+          )
         }
       }
 
-      # Assign geographic extent - terra::ext() replaces raster::extent()
-      terra::ext(raster_img) <- terra::ext(
-        c(bbox["xmin"], bbox["xmax"], bbox["ymin"], bbox["ymax"])
-      )
-      terra::crs(raster_img) <- crs_proj4
+      # KEY FIX: bbox is a named numeric vector — use [[ to extract safely
+      # attr(bbox,"crs")$proj4string is deprecated in terra 1.7+ → returns NULL
+      # Tiles from slippymath are ALWAYS in WGS84, so hardcode EPSG:4326
+      xmin <- as.numeric(bbox[["xmin"]])
+      xmax <- as.numeric(bbox[["xmax"]])
+      ymin <- as.numeric(bbox[["ymin"]])
+      ymax <- as.numeric(bbox[["ymax"]])
+
+      terra::ext(raster_img) <- terra::ext(xmin, xmax, ymin, ymax)
+      terra::crs(raster_img) <- "EPSG:4326"
 
       raster_img
     },
     zoom = tile_grid$zoom
   )
 
-  # Merge tiles - Reduce(terra::merge) replaces do.call(raster::merge, bricks)
   if (length(bricks) == 1) {
     bricks[[1]]
   } else {
@@ -284,60 +334,6 @@ compose_tile_grid <- function(tile_grid, images) {
   }
 }
 
-# compose_tile_grid <- function(tile_grid, images) {
-#
-#   bricks <- purrr::pmap(
-#     .l = list(
-#       x     = tile_grid$tiles$x,
-#       y     = tile_grid$tiles$y,
-#       image = images
-#     ),
-#     .f = function(x, y, image, zoom) {
-#
-#       bbox       <- slippymath::tile_bbox(x, y, zoom)
-#       raster_img <- terra::rast(image)
-#
-#       # Handle single-band paletted PNGs
-#       if (terra::nlyr(raster_img) == 1) {
-#         ct <- terra::coltab(raster_img)[[1]]
-#         if (!is.null(ct) && nrow(ct) > 0) {
-#           vals <- as.integer(terra::values(raster_img)[, 1])
-#           idx  <- match(vals, ct$value)
-#           r    <- terra::setValues(raster_img, ct$red[idx])
-#           g    <- terra::setValues(raster_img, ct$green[idx])
-#           b    <- terra::setValues(raster_img, ct$blue[idx])
-#           raster_img <- c(r, g, b)
-#         }
-#       }
-#
-#       # BEFORE: terra::crs(raster_img) <- attr(bbox, "crs")$proj4string
-#       #         → $proj4string is deprecated, returns NULL in terra 1.7+
-#       #         → terra::rast with NULL CRS gives "[rast] unknown extent"
-#       #         → tiles load with wrong/missing extents → visible grid seams
-#       #
-#       # AFTER:  tile coords are always WGS84 — assign EPSG:4326 directly
-#       #         bbox values accessed by name — always safe
-#
-#       terra::ext(raster_img) <- terra::ext(
-#         c(as.numeric(bbox["xmin"]),
-#           as.numeric(bbox["xmax"]),
-#           as.numeric(bbox["ymin"]),
-#           as.numeric(bbox["ymax"]))
-#       )
-#       terra::crs(raster_img) <- "EPSG:4326"   # tiles are always WGS84
-#
-#       raster_img
-#     },
-#     zoom = tile_grid$zoom
-#   )
-#
-#   # Merge all tiles into one seamless SpatRaster
-#   if (length(bricks) == 1) {
-#     bricks[[1]]
-#   } else {
-#     Reduce(function(a, b) terra::merge(a, b), bricks)
-#   }
-# }
 
 # REPLACES raster slot access: tile_raster@data@values
 # Normalises a multi-band SpatRaster and writes it as a PNG array
