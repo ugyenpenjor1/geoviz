@@ -386,27 +386,59 @@ track_bounding_box <- function(lat_points, long_points, width_buffer) {
 #   terra::merge(tile_collection)
 # }
 
-compose_tile_grid <- function(tile_grid, images) {
+# compose_tile_grid <- function(tile_grid, images) {
+#
+#   # Use pmap to iterate over x, y, and image simultaneously
+#   bricks <- purrr::pmap(
+#     .l = list(x = tile_grid$tiles$x,
+#               y = tile_grid$tiles$y,
+#               image = images),
+#     .f = function(x, y, image, zoom) {
+#
+#       # Get the bounding box for this specific tile
+#       bbox <- slippymath::tile_bbox(x, y, zoom)
+#
+#       # Create the raster from the image
+#       tile_rast <- suppressWarnings(terra::rast(image))
+#
+#       # Set extent using the coordinates from bbox
+#       # Note: explicitly naming the vector elements for terra
+#       terra::ext(tile_rast) <- c(bbox[["xmin"]], bbox[["xmax"]], bbox[["ymin"]], bbox[["ymax"]])
+#       terra::crs(tile_rast) <- "EPSG:3857"
+#
+#       # Handle palette-based images (like watercolor)
+#       if (terra::nlyr(tile_rast) == 1 && !is.null(terra::coltab(tile_rast))) {
+#         tile_rast <- terra::colorize(tile_rast, to = "rgb")
+#       }
+#
+#       return(tile_rast)
+#     },
+#     zoom = tile_grid$zoom
+#   )
+#
+#   # Merge the tiles together
+#   tile_collection <- terra::sprc(bricks)
+#   merged <- terra::merge(tile_collection)
+#
+#   return(merged)
+# }
 
-  # Use pmap to iterate over x, y, and image simultaneously
+compose_tile_grid <- function(tile_grid, images) {
   bricks <- purrr::pmap(
     .l = list(x = tile_grid$tiles$x,
               y = tile_grid$tiles$y,
               image = images),
     .f = function(x, y, image, zoom) {
-
-      # Get the bounding box for this specific tile
       bbox <- slippymath::tile_bbox(x, y, zoom)
 
-      # Create the raster from the image
-      tile_rast <- suppressWarnings(terra::rast(image))
+      # Read image directly into terra
+      tile_rast <- terra::rast(image)
 
-      # Set extent using the coordinates from bbox
-      # Note: explicitly naming the vector elements for terra
+      # Force the extent and CRS
       terra::ext(tile_rast) <- c(bbox[["xmin"]], bbox[["xmax"]], bbox[["ymin"]], bbox[["ymax"]])
       terra::crs(tile_rast) <- "EPSG:3857"
 
-      # Handle palette-based images (like watercolor)
+      # Standardize to RGB if it's a palette image
       if (terra::nlyr(tile_rast) == 1 && !is.null(terra::coltab(tile_rast))) {
         tile_rast <- terra::colorize(tile_rast, to = "rgb")
       }
@@ -416,13 +448,11 @@ compose_tile_grid <- function(tile_grid, images) {
     zoom = tile_grid$zoom
   )
 
-  # Merge the tiles together
+  # Use merge, but wrap in a SpatRasterCollection
+  # This is the most stable way to join adjacent tiles in terra
   tile_collection <- terra::sprc(bricks)
-  merged <- terra::merge(tile_collection)
-
-  return(merged)
+  return(terra::merge(tile_collection))
 }
-
 
 # REPLACES raster slot access: tile_raster@data@values
 # Normalises a multi-band SpatRaster and writes it as a PNG array
@@ -449,13 +479,11 @@ compose_tile_grid <- function(tile_grid, images) {
 # }
 
 raster_to_png <- function(tile_raster, file_path) {
-  # Standardize to 0-255 range immediately to prevent per-tile color shifting
-  # terra::stretch ensures all tiles are treated on the same 8-bit scale
-  tile_raster <- terra::stretch(tile_raster, minq=0, maxq=1)
-
-  # Use terra's built-in writer which is more robust than manual matrix normalization
-  terra::writeRaster(tile_raster, file_path,
+  # Ensure we have values and they are in the 0-255 range
+  # If the raster is already 0-255, this just ensures it's compatible
+  # with the PNG writer.
+  terra::writeRaster(tile_raster,
+                     filename = file_path,
                      overwrite = TRUE,
-                     datatype = "INT1U",
-                     filetype = "PNG")
+                     datatype = "INT1U")
 }
