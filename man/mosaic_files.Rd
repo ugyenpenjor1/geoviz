@@ -3,7 +3,7 @@
 \name{mosaic_files}
 \alias{mosaic_files}
 \title{Stitches together files into a single raster
-Requires a target directory of files that can be read with raster::raster(), e.g. .asc files, or a directory of .zip files containing these files}
+Requires a target directory of files that can be read with terra::rast(), e.g. .asc files, or a directory of .zip files containing these files}
 \usage{
 mosaic_files(
   path,
@@ -35,10 +35,9 @@ TRUE
 }
 \description{
 Stitches together files into a single raster
-Requires a target directory of files that can be read with raster::raster(), e.g. .asc files, or a directory of .zip files containing these files
+Requires a target directory of files that can be read with terra::rast(), e.g. .asc files, or a directory of .zip files containing these files
 }
 \examples{
-\dontrun{
 # Merges two small example .asc files of LIDAR data
 # from https://environment.data.gov.uk (open government licence)
 
@@ -46,10 +45,11 @@ path_to_files <- system.file("extdata/example_asc", package = "geoviz")
 
 path_to_output <- tempdir()
 
+# Fix: Change extension to .tif
 mosaic_files(path_to_files,
-             raster_output_file = paste0(path_to_output, '/mosaic_out.raster', sep = ''),
+             raster_output_file = file.path(path_to_output, 'mosaic_out.tif'),
              extract_zip = TRUE, file_crs = "+init=epsg:27700")
 
-raster_mosaic <- raster::raster(paste0(path_to_output, '/mosaic_out.gri', sep = ''))
-}
+# Fix: Use terra::rast to read the output
+raster_mosaic <- terra::rast(file.path(path_to_output, 'mosaic_out.tif'))
 }

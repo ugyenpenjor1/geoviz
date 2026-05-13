@@ -1,5 +1,5 @@
 #' Stitches together files into a single raster
-#' Requires a target directory of files that can be read with raster::raster(), e.g. .asc files, or a directory of .zip files containing these files
+#' Requires a target directory of files that can be read with terra::rast(), e.g. .asc files, or a directory of .zip files containing these files
 #'
 #' @param path path to files that are to be stitched together
 #' @param extract_zip \code{FALSE} to target .asc files, \code{TRUE} if your .asc files are zipped.
@@ -19,11 +19,13 @@
 #'
 #' path_to_output <- tempdir()
 #'
+#' # Fix: Change extension to .tif
 #' mosaic_files(path_to_files,
-#'              raster_output_file = paste0(path_to_output, '/mosaic_out.raster', sep = ''),
+#'              raster_output_file = file.path(path_to_output, 'mosaic_out.tif'),
 #'              extract_zip = TRUE, file_crs = "+init=epsg:27700")
 #'
-#' raster_mosaic <- raster::raster(paste0(path_to_output, '/mosaic_out.gri', sep = ''))
+#' # Fix: Use terra::rast to read the output
+#' raster_mosaic <- terra::rast(file.path(path_to_output, 'mosaic_out.tif'))
 #' @export
 # mosaic_files <-
 #   function(path,
@@ -151,7 +153,7 @@ mosaic_files <- function(path, extract_zip = FALSE,
   # terra::rast replaces raster::raster for reading files
   raster_mosaic <- terra::rast(glue::glue("{path}{raster_layers$filename[1]}"))
 
-  # terra::crs returns "" (empty string) for missing CRS — check for both NA and ""
+  # terra::crs returns "" (empty string) for missing CRS - check for both NA and ""
   if (is.na(terra::crs(raster_mosaic)) || terra::crs(raster_mosaic) == "") {
     if (is.null(file_crs)) stop("Input files have no CRS. Use file_crs argument to set it.")
     terra::crs(raster_mosaic) <- file_crs
@@ -165,13 +167,13 @@ mosaic_files <- function(path, extract_zip = FALSE,
       if (is.na(terra::crs(new_raster)) || terra::crs(new_raster) == "") {
         terra::crs(new_raster) <- file_crs
       }
-      # terra::mosaic replaces raster::mosaic — same fun="mean" argument
+      # terra::mosaic replaces raster::mosaic - same fun="mean" argument
       raster_mosaic <- terra::mosaic(raster_mosaic, new_raster, fun = "mean")
       pb$tick()
     }
   }
 
-  # terra::writeRaster replaces raster::writeRaster — same interface
+  # terra::writeRaster replaces raster::writeRaster - same interface
   terra::writeRaster(raster_mosaic, raster_output_file, overwrite = TRUE)
   if (extract_zip) unlink(unzip_dir, recursive = TRUE)
   message("Done")
