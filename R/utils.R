@@ -178,11 +178,11 @@ lighten <- function(color, factor = 0.2) {
 igc_dms_to_decimal <- function(dms_vec) {
   sapply(dms_vec, function(dms) {
     hemisphere <- substr(dms, nchar(dms), nchar(dms))     # final char: N/S/E/W
-    body       <- substr(dms, 1, nchar(dms) - 1)          # strip hemisphere
-    parts      <- strsplit(body, "[d']")[[1]]             # split on 'd' and "'"
-    degrees    <- as.numeric(parts[1])
-    minutes    <- as.numeric(parts[2])
-    decimal    <- degrees + minutes / 60
+    body <- substr(dms, 1, nchar(dms) - 1)          # strip hemisphere
+    parts <- strsplit(body, "[d']")[[1]]             # split on 'd' and "'"
+    degrees <- as.numeric(parts[1])
+    minutes <- as.numeric(parts[2])
+    decimal <- degrees + minutes / 60
     if (hemisphere %in% c("S", "W")) decimal <- -decimal
     decimal
   }, USE.NAMES = FALSE)
@@ -193,19 +193,19 @@ square_bounding_box <- function(lat, long, square_km) {
 
   point_sf <- sf::st_sfc(sf::st_point(c(long, lat)), crs = 4326)
 
-  lat_round  <- round(lat, 0)
+  lat_round <- round(lat, 0)
   long_round <- round(long, 0)
-  local_crs  <- paste0(
+  local_crs <- paste0(
     "+proj=laea +lat_0=", lat_round, " +lon_0=", long_round,
     " +x_0=4321000 +y_0=3210000 +ellps=GRS80 ",
     "+towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
   )
 
-  point_proj     <- sf::st_transform(point_sf, crs = sf::st_crs(local_crs))
+  point_proj <- sf::st_transform(point_sf, crs = sf::st_crs(local_crs))
   bounding_shape <- sf::st_buffer(
     point_proj,
-    dist        = square_km * 1000,
-    nQuadSegs   = 1,
+    dist = square_km * 1000,
+    nQuadSegs = 1,
     endCapStyle = "SQUARE"
   )
   return(bounding_shape)
@@ -216,26 +216,20 @@ track_bounding_box <- function(lat_points, long_points, width_buffer) {
   points_sf <- sf::st_as_sf(
     data.frame(x = long_points, y = lat_points),
     coords = c("x", "y"),
-    crs    = 4326
+    crs = 4326
   )
-  bbox_poly  <- sf::st_as_sfc(sf::st_bbox(points_sf))
-  local_crs  <- paste0(
+  bbox_poly <- sf::st_as_sfc(sf::st_bbox(points_sf))
+  local_crs <- paste0(
     "+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 ",
     "+ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
   )
-  bbox_proj      <- sf::st_transform(bbox_poly, crs = sf::st_crs(local_crs))
+  bbox_proj <- sf::st_transform(bbox_poly, crs = sf::st_crs(local_crs))
   bounding_shape <- sf::st_buffer(bbox_proj, dist = width_buffer * 1000, endCapStyle = "SQUARE")
   return(bounding_shape)
 }
 
 # REPLACES slippymath::compose_tile_grid + raster::brick + raster slot access
 # Builds a single SpatRaster from downloaded tile files.
-# Key changes:
-#   raster::brick()          → terra::rast()
-#   raster::setValues()      → terra::setValues()
-#   tile_raster@data@values  → terra::values()  (no more S4 slot access)
-#   raster@legend@colortable → terra::coltab()
-#   do.call(raster::merge)   → Reduce(terra::merge)
 # compose_tile_grid <- function(tile_grid, images) {
 #
 #   bricks <- purrr::pmap(
@@ -244,7 +238,7 @@ track_bounding_box <- function(lat_points, long_points, width_buffer) {
 #               image = images),
 #     .f = function(x, y, image, zoom) {
 #
-#       bbox      <- slippymath::tile_bbox(x, y, zoom)
+#       bbox <- slippymath::tile_bbox(x, y, zoom)
 #       crs_proj4 <- attr(bbox, "crs")$proj4string  # slippymath attaches CRS as attribute
 #
 #       # Load tile image as terra SpatRaster
@@ -256,8 +250,8 @@ track_bounding_box <- function(lat_points, long_points, width_buffer) {
 #       if (terra::nlyr(raster_img) == 1) {
 #         ct <- terra::coltab(raster_img)[[1]]
 #         if (!is.null(ct) && nrow(ct) > 0) {
-#           vals    <- as.integer(terra::values(raster_img)[, 1])
-#           idx     <- match(vals, ct$value)
+#           vals <- as.integer(terra::values(raster_img)[, 1])
+#           idx <- match(vals, ct$value)
 #           r <- terra::setValues(raster_img, ct$red[idx])
 #           g <- terra::setValues(raster_img, ct$green[idx])
 #           b <- terra::setValues(raster_img, ct$blue[idx])
@@ -284,9 +278,52 @@ track_bounding_box <- function(lat_points, long_points, width_buffer) {
 #   }
 # }
 
-# ── compose_tile_grid : restored to raster-based approach that worked ─────────
+# compose_tile_grid : restored to raster-based approach that worked
 # Terra's merge of JPEG tiles with manually-assigned extents is unreliable.
 # raster::brick + raster::merge handles this correctly — convert to terra after.
+
+# compose_tile_grid <- function(tile_grid, images) {
+#
+#   bricks <- purrr::pmap(
+#     .l = list(x = tile_grid$tiles$x,
+#               y = tile_grid$tiles$y,
+#               image = images),
+#     .f = function(x, y, image, zoom) {
+#
+#       bbox <- slippymath::tile_bbox(x, y, zoom)
+#
+#       # raster::brick on a JPEG — suppress the proj4string deprecation warning
+#       # (it still works correctly despite the warning)
+#       raster_img <- suppressWarnings(
+#         raster::brick(image, crs = attr(bbox, "crs")$proj4string)
+#       )
+#
+#       # Handle single-band paletted PNGs
+#       if (dim(raster_img)[3] == 1) {
+#         raster_img <- suppressWarnings(
+#           raster::raster(image, crs = attr(bbox, "crs")$proj4string)
+#         )
+#         raster_img <- raster::setValues(
+#           raster::brick(raster_img, raster_img, raster_img),
+#           t(grDevices::col2rgb(
+#             raster_img@legend@colortable
+#           ))[raster::values(raster_img) + 1, ]
+#         )
+#       }
+#
+#       # Assign geographic extent from slippymath bbox
+#       raster::extent(raster_img) <- raster::extent(
+#         bbox[c("xmin", "xmax", "ymin", "ymax")]
+#       )
+#       raster_img
+#     },
+#     zoom = tile_grid$zoom
+#   )
+#
+#   # Merge all tiles into one raster, then convert to terra SpatRaster
+#   merged <- do.call(raster::merge, bricks)
+#   terra::rast(merged)   # hand off to terra for everything downstream
+# }
 
 compose_tile_grid <- function(tile_grid, images) {
 
@@ -298,39 +335,26 @@ compose_tile_grid <- function(tile_grid, images) {
 
       bbox <- slippymath::tile_bbox(x, y, zoom)
 
-      # raster::brick on a JPEG — suppress the proj4string deprecation warning
-      # (it still works correctly despite the warning)
-      raster_img <- suppressWarnings(
-        raster::brick(image, crs = attr(bbox, "crs")$proj4string)
-      )
+      # Suppress the "unknown extent" warning because we set it manually 2 lines later
+      tile_rast <- suppressWarnings(terra::rast(image))
 
-      # Handle single-band paletted PNGs
-      if (dim(raster_img)[3] == 1) {
-        raster_img <- suppressWarnings(
-          raster::raster(image, crs = attr(bbox, "crs")$proj4string)
-        )
-        raster_img <- raster::setValues(
-          raster::brick(raster_img, raster_img, raster_img),
-          t(grDevices::col2rgb(
-            raster_img@legend@colortable
-          ))[raster::values(raster_img) + 1, ]
-        )
+      # Handle paletted PNGs: convert to RGB
+      if (terra::nlyr(tile_rast) == 1 && !is.null(terra::coltab(tile_rast))) {
+        tile_rast <- terra::colorize(tile_rast, to = "rgb")
       }
 
-      # Assign geographic extent from slippymath bbox
-      raster::extent(raster_img) <- raster::extent(
-        bbox[c("xmin", "xmax", "ymin", "ymax")]
-      )
-      raster_img
+      # Assign the correct extent and CRS
+      terra::ext(tile_rast) <- c(bbox["xmin"], bbox["xmax"], bbox["ymin"], bbox["ymax"])
+      terra::crs(tile_rast) <- "EPSG:3857"
+
+      tile_rast
     },
     zoom = tile_grid$zoom
   )
 
-  # Merge all tiles into one raster, then convert to terra SpatRaster
-  merged <- do.call(raster::merge, bricks)
-  terra::rast(merged)   # hand off to terra for everything downstream
+  tile_collection <- terra::sprc(bricks)
+  terra::merge(tile_collection)
 }
-
 
 # REPLACES raster slot access: tile_raster@data@values
 # Normalises a multi-band SpatRaster and writes it as a PNG array
@@ -341,8 +365,8 @@ raster_to_png <- function(tile_raster, file_path) {
   nb <- terra::nlyr(tile_raster)
 
   # terra::values() returns matrix [ncells × nbands]; rows are in raster row-major order
-  vals      <- terra::values(tile_raster)
-  band_max  <- apply(vals, 2, max, na.rm = TRUE)
+  vals <- terra::values(tile_raster)
+  band_max <- apply(vals, 2, max, na.rm = TRUE)
   vals_norm <- sweep(vals, 2, band_max, "/")       # normalise each band 0-1
   vals_norm[is.na(vals_norm) | vals_norm < 0] <- 0
   vals_norm[vals_norm > 1] <- 1
