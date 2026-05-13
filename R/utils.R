@@ -325,6 +325,37 @@ track_bounding_box <- function(lat_points, long_points, width_buffer) {
 #   terra::rast(merged)   # hand off to terra for everything downstream
 # }
 
+# compose_tile_grid <- function(tile_grid, images) {
+#
+#   bricks <- purrr::pmap(
+#     .l = list(x = tile_grid$tiles$x,
+#               y = tile_grid$tiles$y,
+#               image = images),
+#     .f = function(x, y, image, zoom) {
+#
+#       bbox <- slippymath::tile_bbox(x, y, zoom)
+#
+#       # Suppress the "unknown extent" warning because we set it manually 2 lines later
+#       tile_rast <- suppressWarnings(terra::rast(image))
+#
+#       # Handle paletted PNGs: convert to RGB
+#       if (terra::nlyr(tile_rast) == 1 && !is.null(terra::coltab(tile_rast))) {
+#         tile_rast <- terra::colorize(tile_rast, to = "rgb")
+#       }
+#
+#       # Assign the correct extent and CRS
+#       terra::ext(tile_rast) <- c(bbox["xmin"], bbox["xmax"], bbox["ymin"], bbox["ymax"])
+#       terra::crs(tile_rast) <- "EPSG:3857"
+#
+#       tile_rast
+#     },
+#     zoom = tile_grid$zoom
+#   )
+#
+#   tile_collection <- terra::sprc(bricks)
+#   terra::merge(tile_collection)
+# }
+
 compose_tile_grid <- function(tile_grid, images) {
 
   bricks <- purrr::pmap(
@@ -335,25 +366,24 @@ compose_tile_grid <- function(tile_grid, images) {
 
       bbox <- slippymath::tile_bbox(x, y, zoom)
 
-      # Suppress the "unknown extent" warning because we set it manually 2 lines later
       tile_rast <- suppressWarnings(terra::rast(image))
 
-      # Handle paletted PNGs: convert to RGB
+      # Use as.numeric to strip any slippymath attributes for a "clean" extent
+      terra::ext(tile_rast) <- as.numeric(c(bbox["xmin"], bbox["xmax"], bbox["ymin"], bbox["ymax"]))
+      terra::crs(tile_rast) <- "EPSG:3857"
+
       if (terra::nlyr(tile_rast) == 1 && !is.null(terra::coltab(tile_rast))) {
         tile_rast <- terra::colorize(tile_rast, to = "rgb")
       }
-
-      # Assign the correct extent and CRS
-      terra::ext(tile_rast) <- c(bbox["xmin"], bbox["xmax"], bbox["ymin"], bbox["ymax"])
-      terra::crs(tile_rast) <- "EPSG:3857"
 
       tile_rast
     },
     zoom = tile_grid$zoom
   )
 
+  # Mosaic is superior for tiling as it handles pixel seams more precisely
   tile_collection <- terra::sprc(bricks)
-  terra::merge(tile_collection)
+  terra::mosaic(tile_collection)
 }
 
 # REPLACES raster slot access: tile_raster@data@values
