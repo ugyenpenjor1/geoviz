@@ -61,7 +61,7 @@
 # slippy_overlay <- function(raster_base, image_source = "stamen", image_type = "watercolor",
 #                            max_tiles = 10, api_key, return_png = TRUE, png_opacity = 0.9) {
 #
-#   # ── 1. Safety Check: Ensure CRS and Extent are valid ────────────────────────
+#   # 1. Safety Check: Ensure CRS and Extent are valid
 #   # This prevents the "!anyNA(x) is not TRUE" error in sf::st_as_sfc
 #   if (terra::crs(raster_base) == "") {
 #     stop("raster_base has no CRS. Please set a projection (e.g., terra::crs(r) <- 'EPSG:27700') before calling slippy_overlay.")
@@ -139,7 +139,7 @@ slippy_overlay <- function(raster_base, image_source = "stamen", image_type = "w
   )
 
   # terra::project(x, y) where y is a SpatRaster matches CRS + extent + resolution
-  raster_out <- terra::project(raster_out, raster_base)   # ← template, not CRS string
+  raster_out <- terra::project(raster_out, raster_base, method = "bilinear")   # template, not CRS string
 
   if (!return_png) return(raster_out)
 
