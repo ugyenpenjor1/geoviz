@@ -424,34 +424,51 @@ track_bounding_box <- function(lat_points, long_points, width_buffer) {
 # }
 
 compose_tile_grid <- function(tile_grid, images) {
+
   bricks <- purrr::pmap(
-    .l = list(x = tile_grid$tiles$x,
-              y = tile_grid$tiles$y,
-              image = images),
+    .l = list(
+      x     = tile_grid$tiles$x,
+      y     = tile_grid$tiles$y,
+      image = images
+    ),
     .f = function(x, y, image, zoom) {
-      bbox <- slippymath::tile_bbox(x, y, zoom)
 
-      # Read image directly into terra
-      tile_rast <- terra::rast(image)
+      # slippymath::tile_bbox() returns an sf bbox already in EPSG:4326.
+      # sf::st_as_sfc() preserves that CRS, so st_transform to 3857 is clean.
+      # Using as.numeric() strips any residual sf names before terra sees them.
+      bbox_wgs84 <- slippymath::tile_bbox(x, y, zoom)
+      bbox_3857  <- sf::st_bbox(
+        sf::st_transform(sf::st_as_sfc(bbox_wgs84), crs = 3857)
+      )
 
-      # Force the extent and CRS
-      terra::ext(tile_rast) <- c(bbox[["xmin"]], bbox[["xmax"]], bbox[["ymin"]], bbox[["ymax"]])
+      # Suppress expected "unknown extent" warning — we assign extent below.
+      tile_rast <- suppressWarnings(terra::rast(image))
+
+      # terra::ext() with 4 explicit scalars is unambiguous (xmin, xmax, ymin, ymax).
+      terra::ext(tile_rast) <- terra::ext(
+        as.numeric(bbox_3857["xmin"]),
+        as.numeric(bbox_3857["xmax"]),
+        as.numeric(bbox_3857["ymin"]),
+        as.numeric(bbox_3857["ymax"])
+      )
       terra::crs(tile_rast) <- "EPSG:3857"
 
-      # Standardize to RGB if it's a palette image
+      # Expand indexed/palette tiles to RGB
       if (terra::nlyr(tile_rast) == 1 && !is.null(terra::coltab(tile_rast))) {
         tile_rast <- terra::colorize(tile_rast, to = "rgb")
       }
 
-      return(tile_rast)
+      # Drop alpha — terra::merge requires consistent band count across tiles
+      if (terra::nlyr(tile_rast) > 3) {
+        tile_rast <- tile_rast[[1:3]]
+      }
+
+      tile_rast
     },
     zoom = tile_grid$zoom
   )
 
-  # Use merge, but wrap in a SpatRasterCollection
-  # This is the most stable way to join adjacent tiles in terra
-  tile_collection <- terra::sprc(bricks)
-  return(terra::merge(tile_collection))
+  terra::merge(terra::sprc(bricks))
 }
 
 # REPLACES raster slot access: tile_raster@data@values
