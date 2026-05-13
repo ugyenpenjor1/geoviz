@@ -284,54 +284,51 @@ track_bounding_box <- function(lat_points, long_points, width_buffer) {
 #   }
 # }
 
+# ── compose_tile_grid : restored to raster-based approach that worked ─────────
+# Terra's merge of JPEG tiles with manually-assigned extents is unreliable.
+# raster::brick + raster::merge handles this correctly — convert to terra after.
+
 compose_tile_grid <- function(tile_grid, images) {
 
   bricks <- purrr::pmap(
-    .l = list(
-      x     = tile_grid$tiles$x,
-      y     = tile_grid$tiles$y,
-      image = images
-    ),
+    .l = list(x = tile_grid$tiles$x,
+              y = tile_grid$tiles$y,
+              image = images),
     .f = function(x, y, image, zoom) {
 
-      bbox       <- slippymath::tile_bbox(x, y, zoom)
-      raster_img <- terra::rast(image)
+      bbox <- slippymath::tile_bbox(x, y, zoom)
+
+      # raster::brick on a JPEG — suppress the proj4string deprecation warning
+      # (it still works correctly despite the warning)
+      raster_img <- suppressWarnings(
+        raster::brick(image, crs = attr(bbox, "crs")$proj4string)
+      )
 
       # Handle single-band paletted PNGs
-      if (terra::nlyr(raster_img) == 1) {
-        ct <- terra::coltab(raster_img)[[1]]
-        if (!is.null(ct) && nrow(ct) > 0) {
-          vals       <- as.integer(terra::values(raster_img)[, 1])
-          idx        <- match(vals, ct$value)
-          raster_img <- c(
-            terra::setValues(raster_img, ct$red[idx]),
-            terra::setValues(raster_img, ct$green[idx]),
-            terra::setValues(raster_img, ct$blue[idx])
-          )
-        }
+      if (dim(raster_img)[3] == 1) {
+        raster_img <- suppressWarnings(
+          raster::raster(image, crs = attr(bbox, "crs")$proj4string)
+        )
+        raster_img <- raster::setValues(
+          raster::brick(raster_img, raster_img, raster_img),
+          t(grDevices::col2rgb(
+            raster_img@legend@colortable
+          ))[raster::values(raster_img) + 1, ]
+        )
       }
 
-      # KEY FIX: bbox is a named numeric vector — use [[ to extract safely
-      # attr(bbox,"crs")$proj4string is deprecated in terra 1.7+ → returns NULL
-      # Tiles from slippymath are ALWAYS in WGS84, so hardcode EPSG:4326
-      xmin <- as.numeric(bbox[["xmin"]])
-      xmax <- as.numeric(bbox[["xmax"]])
-      ymin <- as.numeric(bbox[["ymin"]])
-      ymax <- as.numeric(bbox[["ymax"]])
-
-      terra::ext(raster_img) <- terra::ext(xmin, xmax, ymin, ymax)
-      terra::crs(raster_img) <- "EPSG:4326"
-
+      # Assign geographic extent from slippymath bbox
+      raster::extent(raster_img) <- raster::extent(
+        bbox[c("xmin", "xmax", "ymin", "ymax")]
+      )
       raster_img
     },
     zoom = tile_grid$zoom
   )
 
-  if (length(bricks) == 1) {
-    bricks[[1]]
-  } else {
-    Reduce(function(a, b) terra::merge(a, b), bricks)
-  }
+  # Merge all tiles into one raster, then convert to terra SpatRaster
+  merged <- do.call(raster::merge, bricks)
+  terra::rast(merged)   # hand off to terra for everything downstream
 }
 
 

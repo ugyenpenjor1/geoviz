@@ -18,6 +18,7 @@ Imports:
   tibble,
   purrr,
   stringr,
+  raster,
   terra,
   chron,
   sf,
