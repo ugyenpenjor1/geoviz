@@ -356,56 +356,106 @@ track_bounding_box <- function(lat_points, long_points, width_buffer) {
 #   terra::merge(tile_collection)
 # }
 
+# compose_tile_grid <- function(tile_grid, images) {
+#
+#   bricks <- purrr::pmap(
+#     .l = list(x = tile_grid$tiles$x,
+#               y = tile_grid$tiles$y,
+#               image = images),
+#     .f = function(x, y, image, zoom) {
+#
+#       bbox <- slippymath::tile_bbox(x, y, zoom)
+#
+#       tile_rast <- suppressWarnings(terra::rast(image))
+#
+#       # Use as.numeric to strip any slippymath attributes for a "clean" extent
+#       terra::ext(tile_rast) <- as.numeric(c(bbox["xmin"], bbox["xmax"], bbox["ymin"], bbox["ymax"]))
+#       terra::crs(tile_rast) <- "EPSG:3857"
+#
+#       if (terra::nlyr(tile_rast) == 1 && !is.null(terra::coltab(tile_rast))) {
+#         tile_rast <- terra::colorize(tile_rast, to = "rgb")
+#       }
+#
+#       tile_rast
+#     },
+#     zoom = tile_grid$zoom
+#   )
+#
+#   # Mosaic is superior for tiling as it handles pixel seams more precisely
+#   tile_collection <- terra::sprc(bricks)
+#   terra::merge(tile_collection)
+# }
+
 compose_tile_grid <- function(tile_grid, images) {
 
+  # Use pmap to iterate over x, y, and image simultaneously
   bricks <- purrr::pmap(
     .l = list(x = tile_grid$tiles$x,
               y = tile_grid$tiles$y,
               image = images),
     .f = function(x, y, image, zoom) {
 
+      # Get the bounding box for this specific tile
       bbox <- slippymath::tile_bbox(x, y, zoom)
 
+      # Create the raster from the image
       tile_rast <- suppressWarnings(terra::rast(image))
 
-      # Use as.numeric to strip any slippymath attributes for a "clean" extent
-      terra::ext(tile_rast) <- as.numeric(c(bbox["xmin"], bbox["xmax"], bbox["ymin"], bbox["ymax"]))
+      # Set extent using the coordinates from bbox
+      # Note: explicitly naming the vector elements for terra
+      terra::ext(tile_rast) <- c(bbox[["xmin"]], bbox[["xmax"]], bbox[["ymin"]], bbox[["ymax"]])
       terra::crs(tile_rast) <- "EPSG:3857"
 
+      # Handle palette-based images (like watercolor)
       if (terra::nlyr(tile_rast) == 1 && !is.null(terra::coltab(tile_rast))) {
         tile_rast <- terra::colorize(tile_rast, to = "rgb")
       }
 
-      tile_rast
+      return(tile_rast)
     },
     zoom = tile_grid$zoom
   )
 
-  # Mosaic is superior for tiling as it handles pixel seams more precisely
+  # Merge the tiles together
   tile_collection <- terra::sprc(bricks)
-  terra::mosaic(tile_collection)
+  merged <- terra::merge(tile_collection)
+
+  return(merged)
 }
+
 
 # REPLACES raster slot access: tile_raster@data@values
 # Normalises a multi-band SpatRaster and writes it as a PNG array
+# raster_to_png <- function(tile_raster, file_path) {
+#
+#   nr <- terra::nrow(tile_raster)
+#   nc <- terra::ncol(tile_raster)
+#   nb <- terra::nlyr(tile_raster)
+#
+#   # terra::values() returns matrix [ncells × nbands]; rows are in raster row-major order
+#   vals <- terra::values(tile_raster)
+#   band_max <- apply(vals, 2, max, na.rm = TRUE)
+#   vals_norm <- sweep(vals, 2, band_max, "/")       # normalise each band 0-1
+#   vals_norm[is.na(vals_norm) | vals_norm < 0] <- 0
+#   vals_norm[vals_norm > 1] <- 1
+#
+#   # Reshape to array [nrow, ncol, nbands] as png::writePNG expects
+#   arr <- array(0, dim = c(nr, nc, nb))
+#   for (i in seq_len(nb)) {
+#     arr[,,i] <- matrix(vals_norm[, i], nrow = nr, ncol = nc, byrow = TRUE)
+#   }
+#
+#   png::writePNG(arr, target = file_path)
+# }
+
 raster_to_png <- function(tile_raster, file_path) {
+  # Standardize to 0-255 range immediately to prevent per-tile color shifting
+  # terra::stretch ensures all tiles are treated on the same 8-bit scale
+  tile_raster <- terra::stretch(tile_raster, minq=0, maxq=1)
 
-  nr <- terra::nrow(tile_raster)
-  nc <- terra::ncol(tile_raster)
-  nb <- terra::nlyr(tile_raster)
-
-  # terra::values() returns matrix [ncells × nbands]; rows are in raster row-major order
-  vals <- terra::values(tile_raster)
-  band_max <- apply(vals, 2, max, na.rm = TRUE)
-  vals_norm <- sweep(vals, 2, band_max, "/")       # normalise each band 0-1
-  vals_norm[is.na(vals_norm) | vals_norm < 0] <- 0
-  vals_norm[vals_norm > 1] <- 1
-
-  # Reshape to array [nrow, ncol, nbands] as png::writePNG expects
-  arr <- array(0, dim = c(nr, nc, nb))
-  for (i in seq_len(nb)) {
-    arr[,,i] <- matrix(vals_norm[, i], nrow = nr, ncol = nc, byrow = TRUE)
-  }
-
-  png::writePNG(arr, target = file_path)
+  # Use terra's built-in writer which is more robust than manual matrix normalization
+  terra::writeRaster(tile_raster, file_path,
+                     overwrite = TRUE,
+                     datatype = "INT1U",
+                     filetype = "PNG")
 }
